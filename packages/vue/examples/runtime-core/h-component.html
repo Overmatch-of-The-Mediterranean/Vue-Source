@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+    <script src="../../dist//vue.js"></script>
+</head>
+
+<body>
+    <script>
+        const { h } = Vue
+
+
+        const component = {
+            render () {
+                const vnode1 = h('div', '我是一个组件')
+                console.log('vnode1', vnode1);
+                return vnode1
+            }
+        }
+
+
+        const vnode2 = h(component)
+        console.log('vnode2', vnode2, vnode2.type.render);
+
+        // const VNode = h('div',
+        //     { class: 'container' },
+        //     [
+        //         h('p', 'p1'),
+        //         h('p', 'p2'),
+        //         h('p', 'p3')
+        //     ]
+        // )
+        // console.log(VNode);
+    </script>
+</body>
+
+</html>

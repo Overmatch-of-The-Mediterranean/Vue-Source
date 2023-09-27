@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+    <script src="../../dist//vue.js"></script>
+</head>
+
+<body>
+    <script>
+        const { h } = Vue
+
+
+        const vnode1 = h('p', {
+            class: 'red1 blue1'
+        }, 'p1')
+
+        const vnode2 = h('p', {
+            class: {
+                red2: true
+            }
+        }, 'p2')
+
+        const vnode3 = h('p', {
+            class: [
+                'red3',
+                {
+                    blue3: true
+                },
+                {
+                    green3: true
+                }
+            ]
+        }, 'p3')
+
+
+        console.log('vnode1', vnode1);
+        console.log('vnode1', vnode2);
+        console.log('vnode1', vnode3);
+
+    </script>
+</body>
+
+</html>
