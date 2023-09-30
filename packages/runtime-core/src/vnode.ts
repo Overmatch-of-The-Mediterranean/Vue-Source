@@ -1,13 +1,14 @@
 import { ShapeFlags } from "packages/shared/src/shapeFlags"
 import { isArray, isFunction, isObject, isString, isProxy, extend } from "@vue/shared"
-import { normalizeClass, normalizeStyle } from "packages/vue/src/normalizeProp"
+import { normalizeClass, normalizeStyle } from "packages/shared/src/normalizeProp"
     
 export interface VNode { 
     __v_isVNode:true
     type: any,
     props: any,
     children: any,
-    shapeFlag:ShapeFlags
+    shapeFlag: ShapeFlags,
+    key:any
     
 }
  
@@ -86,4 +87,8 @@ function normalizeChildren(VNode:any, children:any) {
 
     VNode.shapeFlag |= type
     VNode.children = children
+}
+ 
+export function isSameVNodeType(n1:VNode, n2:VNode) {
+    return n1.type === n2.type && n1.key === n2.key 
  }

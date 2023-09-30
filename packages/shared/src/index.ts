@@ -33,4 +33,7 @@ export function isReadonly(value: unknown): boolean {
   return !!(value && (value as Target)[ReactiveFlags.IS_READONLY])
 }
 
-export const isString = (val:any) => typeof val === 'string'
+export const isString = (val: any) => typeof val === 'string'
+
+const onRE = /^on[^a-z]/
+export const isOn = (key:string) => onRE.test(key) 

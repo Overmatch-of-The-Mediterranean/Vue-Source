@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+    <script src="../../dist//vue.js"></script>
+    <style>
+        .active {
+            color: red;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div id="app"></div>
+
+    <script>
+        const { h, render } = Vue
+
+        const vnode1 = h('button', {
+            onclick () {
+                alert('单击')
+            }
+        }, '我是vnode1')
+
+        render(vnode1, document.querySelector('#app'))
+
+        setTimeout(() => {
+            const vnode2 = h('button', {
+                onDblClick () {
+                    alert('双击')
+                }
+            }, '我是vnode2')
+            render(vnode2, document.querySelector('#app'))
+        }, 2000)
+
+    </script>
+</body>
+
+</html>
