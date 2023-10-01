@@ -1,7 +1,11 @@
 import { ShapeFlags } from "packages/shared/src/shapeFlags"
-import { Comment, Fragment, Text, VNode, createVNode, isSameVNodeType } from "./vnode"
+import { Comment, Fragment, Text, VNode, createVNode, isSameVNodeType, normalizeVNode } from "./vnode"
 import { patchProp } from "packages/runtime-dom/src/patchProp"
 import { EMPTY_OBJ, isString } from "@vue/shared"
+import { createComponentInstance, setupComponent } from "./component"
+import { ReactiveEffect } from "packages/reactivity/src/effect"
+import { queuePreFlushCb } from "./scheduler"
+import { renderComponentRoot } from "./componentRenderUtils"
 
 interface RendererOptions { 
     insert(child:Element,parent:Element,anchor): void
@@ -33,6 +37,51 @@ function baseCreateRenderer(options: RendererOptions) {
         setText: hostSetText
     } = options
     
+    // 组件挂载
+    const setupRenderEffect = (instance,initialVNode,container,anchor)=>{
+        const componentUpdateFn = () => { 
+            if (!instance.isMounted) { 
+                const { bm, m } = instance
+                const subTree = instance.subTree = renderComponentRoot(instance)
+
+                if (bm) { 
+                    bm()
+                 }
+
+                patch(null, subTree, container, anchor)
+                
+                if (m) { 
+                    m()
+                 }
+
+                initialVNode.el = subTree.el
+             }
+         }
+
+        const effect = instance.effect = new ReactiveEffect(
+            componentUpdateFn,
+            () => queuePreFlushCb(update)
+        )
+
+        const update = instance.update = () => effect.run()
+
+        update()
+
+     }
+
+    const mountComponent = (initialVNode, container, anchor) => { 
+        // 创建组件实例
+        initialVNode.component = createComponentInstance(initialVNode)
+        const instance = initialVNode.component
+
+        // 组件实例上添加render
+        setupComponent(instance)
+
+        // 组件实例渲染
+        setupRenderEffect(instance,initialVNode,container,anchor)
+
+     }
+
     // 挂载
     const mountElement = (vnode, container, anchor) => { 
         const { type, shapeFlag,props } = vnode
@@ -76,17 +125,7 @@ function baseCreateRenderer(options: RendererOptions) {
          }
     }
     
-    const normalizeVNode = (child) => { 
-        if (typeof child === 'object') {
-            return cloneIfMounted(child)
-        } else { 
-            return createVNode(Text,null,String(child))
-         }
-    }
-    
-    const cloneIfMounted = (child) => { 
-        return child
-     }
+
 
     const patchChildren = (oldVNode, newVNode,container,anchor) => { 
         
@@ -193,6 +232,11 @@ function baseCreateRenderer(options: RendererOptions) {
          }
      }
     
+    const processComponent = (oldVNode, newVNode, container, anchor) => { 
+        if (oldVNode == null) { 
+            mountComponent(newVNode, container, anchor)
+         }
+     }
     
     
     const patch = (oldVNode, newVNode, container, anchor = null) => { 
@@ -222,7 +266,9 @@ function baseCreateRenderer(options: RendererOptions) {
             default:
                 if (shapeFlag & ShapeFlags.ELEMENT) {
                     processElement(oldVNode, newVNode, container, anchor)
-                } else if (shapeFlag & ShapeFlags.COMPONENT) { }
+                } else if (shapeFlag & ShapeFlags.COMPONENT) { 
+                    processComponent(oldVNode, newVNode, container ,anchor)
+                }
          }
      }
     

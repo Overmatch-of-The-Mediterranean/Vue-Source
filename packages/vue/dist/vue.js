@@ -523,8 +523,20 @@ var Vue = (function (exports) {
         VNode.children = children;
     }
     function isSameVNodeType(n1, n2) {
+        debugger;
         return n1.type === n2.type && n1.key === n2.key;
     }
+    var normalizeVNode = function (child) {
+        if (typeof child === 'object') {
+            return cloneIfMounted(child);
+        }
+        else {
+            return createVNode(Text, null, String(child));
+        }
+    };
+    var cloneIfMounted = function (child) {
+        return child;
+    };
 
     // 主要做对参数的处理，然后返回VNode
     function h(type, propsOrChildren, children) {
@@ -551,11 +563,128 @@ var Vue = (function (exports) {
         }
     }
 
+    // 传入要注册的生命周期钩子是什么
+    var onBeforeMount = createHook("bm" /* LifeCycleHooks.BEFORE_Mount */);
+    var onMounted = createHook("m" /* LifeCycleHooks.MOUNTED */);
+    function createHook(lifecycle) {
+        return function (hook, target) {
+            injectHook(lifecycle, hook, target);
+        };
+    }
+    function injectHook(type, hook, target) {
+        if (target) {
+            target[type] = hook;
+        }
+    }
+
+    var uid = 0;
+    function createComponentInstance(vnode) {
+        var type = vnode.type;
+        var instance = {
+            uid: uid++,
+            type: type,
+            vnode: vnode,
+            render: null,
+            subTree: null,
+            effect: null,
+            update: null,
+            isMounted: false,
+            bc: null,
+            c: null,
+            bm: null,
+            m: null
+        };
+        return instance;
+    }
+    function setupComponent(instance) {
+        setupStatefulComponent(instance);
+    }
+    function setupStatefulComponent(instance) {
+        finishComponentSetup(instance);
+    }
+    /**
+     * 1.赋值render
+     * 2.处理options
+    */
+    function finishComponentSetup(instance) {
+        var Component = instance.type;
+        instance.render = Component.render;
+        applyOptions(instance);
+    }
+    function applyOptions(instance) {
+        // debugger
+        var _a = instance.type, dataOptions = _a.data, beforeCreate = _a.beforeCreate, created = _a.created, beforeMount = _a.beforeMount, mounted = _a.mounted;
+        // 初始化参数前执行
+        if (beforeCreate) {
+            callHook(beforeCreate);
+        }
+        // stateful component的处理
+        // 1. 使用proxy包裹
+        // 2. 改变vnode中的this指向
+        if (dataOptions) {
+            var data = dataOptions();
+            if (isObject(data)) {
+                instance.data = reactive(data);
+            }
+        }
+        // 初始化参数后执行
+        if (created) {
+            callHook(created);
+        }
+        function registerLifecycleHook(register, hook) {
+            register(hook, instance);
+        }
+        // 注册其余的生命周期钩子
+        registerLifecycleHook(onBeforeMount, beforeMount);
+        registerLifecycleHook(onMounted, mounted);
+    }
+    function callHook(hook) {
+        hook();
+    }
+
+    function renderComponentRoot(instance) {
+        var render = instance.render, vnode = instance.vnode, data = instance.data;
+        var result;
+        if (vnode.shapeFlag & 4 /* ShapeFlags.STATEFUL_COMPONENT */) {
+            result = normalizeVNode(render.call(data));
+        }
+        return result;
+    }
+
     function createRenderer(options) {
         return baseCreateRenderer(options);
     }
     function baseCreateRenderer(options) {
         var hostInsert = options.insert, hostCreateElement = options.createElement, hostSetElementText = options.setElementText, hostPatchProp = options.patchProp, hostRemove = options.remove, hostCreateText = options.createText, hostCreateComment = options.createComment, hostSetText = options.setText;
+        // 组件挂载
+        var setupRenderEffect = function (instance, initialVNode, container, anchor) {
+            var componentUpdateFn = function () {
+                if (!instance.isMounted) {
+                    var bm = instance.bm, m = instance.m;
+                    var subTree = instance.subTree = renderComponentRoot(instance);
+                    if (bm) {
+                        bm();
+                    }
+                    patch(null, subTree, container, anchor);
+                    if (m) {
+                        m();
+                    }
+                    initialVNode.el = subTree.el;
+                }
+            };
+            var effect = instance.effect = new ReactiveEffect(componentUpdateFn, function () { return queuePreFlushCb(update); });
+            var update = instance.update = function () { return effect.run(); };
+            update();
+        };
+        var mountComponent = function (initialVNode, container, anchor) {
+            // 创建组件实例
+            initialVNode.component = createComponentInstance(initialVNode);
+            var instance = initialVNode.component;
+            // 组件实例上添加render
+            setupComponent(instance);
+            // 组件实例渲染
+            setupRenderEffect(instance, initialVNode, container, anchor);
+        };
         // 挂载
         var mountElement = function (vnode, container, anchor) {
             var type = vnode.type, shapeFlag = vnode.shapeFlag, props = vnode.props;
@@ -591,17 +720,6 @@ var Vue = (function (exports) {
                 var child = (children[i] = normalizeVNode(children[i]));
                 patch(null, child, container, anchor);
             }
-        };
-        var normalizeVNode = function (child) {
-            if (typeof child === 'object') {
-                return cloneIfMounted(child);
-            }
-            else {
-                return createVNode(Text, null, String(child));
-            }
-        };
-        var cloneIfMounted = function (child) {
-            return child;
         };
         var patchChildren = function (oldVNode, newVNode, container, anchor) {
             // 获取新旧vnode的children和shapeFlag
@@ -684,6 +802,11 @@ var Vue = (function (exports) {
                 patchChildren(oldVNode, newVNode, container);
             }
         };
+        var processComponent = function (oldVNode, newVNode, container, anchor) {
+            if (oldVNode == null) {
+                mountComponent(newVNode, container, anchor);
+            }
+        };
         var patch = function (oldVNode, newVNode, container, anchor) {
             if (anchor === void 0) { anchor = null; }
             // debugger
@@ -709,6 +832,9 @@ var Vue = (function (exports) {
                 default:
                     if (shapeFlag & 1 /* ShapeFlags.ELEMENT */) {
                         processElement(oldVNode, newVNode, container, anchor);
+                    }
+                    else if (shapeFlag & 6 /* ShapeFlags.COMPONENT */) {
+                        processComponent(oldVNode, newVNode, container, anchor);
                     }
             }
         };

@@ -89,6 +89,19 @@ function normalizeChildren(VNode:any, children:any) {
     VNode.children = children
 }
  
-export function isSameVNodeType(n1:VNode, n2:VNode) {
+export function isSameVNodeType(n1: VNode, n2: VNode) {
+    debugger
     return n1.type === n2.type && n1.key === n2.key 
- }
+}
+export const normalizeVNode = (child) => { 
+    if (typeof child === 'object') {
+        return cloneIfMounted(child)
+    } else { 
+        return createVNode(Text,null,String(child))
+     }
+}
+
+    
+    const cloneIfMounted = (child) => { 
+        return child
+     }
