@@ -57,7 +57,8 @@ export function createBaseVNode(type: any, props: any, children: any, shapeFlag:
         __v_isVNode:true,
         type,
         props,
-        shapeFlag
+        shapeFlag,
+        key:props?.key || null
     } as VNode
 
     normalizeChildren(VNode,children)
@@ -90,7 +91,6 @@ function normalizeChildren(VNode:any, children:any) {
 }
  
 export function isSameVNodeType(n1: VNode, n2: VNode) {
-    debugger
     return n1.type === n2.type && n1.key === n2.key 
 }
 export const normalizeVNode = (child) => { 

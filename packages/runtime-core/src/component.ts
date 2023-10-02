@@ -1,5 +1,5 @@
 import { reactive } from "@vue/reactivity"
-import { isObject } from "@vue/shared"
+import { isFunction, isObject } from "@vue/shared"
 import { onBeforeMount, onMounted } from "./apiLifecycle"
 
 export const enum LifeCycleHooks  { 
@@ -38,7 +38,30 @@ export function setupComponent(instance) {
 }
  
 export function setupStatefulComponent(instance) { 
+
+    const { setup } = instance.type
+
+    
+    if (setup) {
+        const setupResult = setup()
+        
+        handleSetupResult(setupResult, instance)
+        
+        
+
+    } else { 
+        finishComponentSetup(instance)
+     }
+
+    
+ }
+
+function handleSetupResult(setupResult, instance) { 
+    if (isFunction(setupResult)) { 
+        instance.render = setupResult
+    }
     finishComponentSetup(instance)
+    
  }
 
 
@@ -48,7 +71,10 @@ export function setupStatefulComponent(instance) {
 */
 export function finishComponentSetup(instance) {
     const Component = instance.type
-    instance.render = Component.render
+    if (!instance.render) { 
+        instance.render = Component.render
+     }
+    
 
     applyOptions(instance)
 }
@@ -65,7 +91,7 @@ export function applyOptions(instance) {
     
     // 初始化参数前执行
     if (beforeCreate) { 
-        callHook(beforeCreate)
+        callHook(beforeCreate,instance)
      }
 
     // stateful component的处理
@@ -81,18 +107,18 @@ export function applyOptions(instance) {
     
     // 初始化参数后执行
     if (created) { 
-        callHook(created)
+        callHook(created,instance)
     }
     
 
     function registerLifecycleHook(register, hook) { 
-        register(hook,instance)
+        register(hook?.bind(instance.data),instance)
      }
 
     // 注册其余的生命周期钩子
     registerLifecycleHook(onBeforeMount, beforeMount)
     registerLifecycleHook(onMounted,mounted)
 }
-export function callHook(hook) {
-    hook()
+export function callHook(hook,instance) {
+    hook.call(instance.data)
  }

@@ -22,7 +22,12 @@
             },
             render () {
                 return h('div', this.msg)
-            }
+            },
+            created () {
+                setTimeout(() => {
+                    this.msg = 'update world!!!'
+                }, 2000)
+            },
         }
 
         const vnode1 = h(component1)

@@ -499,7 +499,8 @@ var Vue = (function (exports) {
             __v_isVNode: true,
             type: type,
             props: props,
-            shapeFlag: shapeFlag
+            shapeFlag: shapeFlag,
+            key: (props === null || props === void 0 ? void 0 : props.key) || null
         };
         normalizeChildren(VNode, children);
         return VNode;
@@ -523,7 +524,6 @@ var Vue = (function (exports) {
         VNode.children = children;
     }
     function isSameVNodeType(n1, n2) {
-        debugger;
         return n1.type === n2.type && n1.key === n2.key;
     }
     var normalizeVNode = function (child) {
@@ -600,6 +600,19 @@ var Vue = (function (exports) {
         setupStatefulComponent(instance);
     }
     function setupStatefulComponent(instance) {
+        var setup = instance.type.setup;
+        if (setup) {
+            var setupResult = setup();
+            handleSetupResult(setupResult, instance);
+        }
+        else {
+            finishComponentSetup(instance);
+        }
+    }
+    function handleSetupResult(setupResult, instance) {
+        if (isFunction(setupResult)) {
+            instance.render = setupResult;
+        }
         finishComponentSetup(instance);
     }
     /**
@@ -608,7 +621,9 @@ var Vue = (function (exports) {
     */
     function finishComponentSetup(instance) {
         var Component = instance.type;
-        instance.render = Component.render;
+        if (!instance.render) {
+            instance.render = Component.render;
+        }
         applyOptions(instance);
     }
     function applyOptions(instance) {
@@ -616,7 +631,7 @@ var Vue = (function (exports) {
         var _a = instance.type, dataOptions = _a.data, beforeCreate = _a.beforeCreate, created = _a.created, beforeMount = _a.beforeMount, mounted = _a.mounted;
         // 初始化参数前执行
         if (beforeCreate) {
-            callHook(beforeCreate);
+            callHook(beforeCreate, instance);
         }
         // stateful component的处理
         // 1. 使用proxy包裹
@@ -629,17 +644,17 @@ var Vue = (function (exports) {
         }
         // 初始化参数后执行
         if (created) {
-            callHook(created);
+            callHook(created, instance);
         }
         function registerLifecycleHook(register, hook) {
-            register(hook, instance);
+            register(hook === null || hook === void 0 ? void 0 : hook.bind(instance.data), instance);
         }
         // 注册其余的生命周期钩子
         registerLifecycleHook(onBeforeMount, beforeMount);
         registerLifecycleHook(onMounted, mounted);
     }
-    function callHook(hook) {
-        hook();
+    function callHook(hook, instance) {
+        hook.call(instance.data);
     }
 
     function renderComponentRoot(instance) {
@@ -656,10 +671,10 @@ var Vue = (function (exports) {
     }
     function baseCreateRenderer(options) {
         var hostInsert = options.insert, hostCreateElement = options.createElement, hostSetElementText = options.setElementText, hostPatchProp = options.patchProp, hostRemove = options.remove, hostCreateText = options.createText, hostCreateComment = options.createComment, hostSetText = options.setText;
-        // 组件挂载
         var setupRenderEffect = function (instance, initialVNode, container, anchor) {
             var componentUpdateFn = function () {
                 if (!instance.isMounted) {
+                    // 组件挂载
                     var bm = instance.bm, m = instance.m;
                     var subTree = instance.subTree = renderComponentRoot(instance);
                     if (bm) {
@@ -670,6 +685,19 @@ var Vue = (function (exports) {
                         m();
                     }
                     initialVNode.el = subTree.el;
+                    instance.isMounted = true;
+                }
+                else {
+                    // 组件更新
+                    var next = instance.next, vnode = instance.vnode;
+                    if (!next) {
+                        next = vnode;
+                    }
+                    var nextTree = renderComponentRoot(instance);
+                    var preTree = instance.subTree;
+                    instance.subTree = nextTree;
+                    patch(preTree, nextTree, container, anchor);
+                    next.el = nextTree.el;
                 }
             };
             var effect = instance.effect = new ReactiveEffect(componentUpdateFn, function () { return queuePreFlushCb(update); });
@@ -694,6 +722,9 @@ var Vue = (function (exports) {
             if (shapeFlag & 8 /* ShapeFlags.TEXT_CHILDREN */) {
                 hostSetElementText(el, vnode.children);
             }
+            else if (shapeFlag & 16 /* ShapeFlags.ARRAY_CHILDREN */) {
+                mountChildren(vnode.children, el, null);
+            }
             // 3.处理props
             if (props) {
                 for (var key in props) {
@@ -708,7 +739,7 @@ var Vue = (function (exports) {
             var oldProps = oldVNode.props || EMPTY_OBJ;
             var newProps = newVNode.props || EMPTY_OBJ;
             // 更新children
-            patchChildren(oldVNode, newVNode, el);
+            patchChildren(oldVNode, newVNode, el, null);
             // 更新props
             patchProps(el, newVNode, oldProps, newProps);
         };
@@ -720,6 +751,59 @@ var Vue = (function (exports) {
                 var child = (children[i] = normalizeVNode(children[i]));
                 patch(null, child, container, anchor);
             }
+        };
+        // diff算法核心
+        var patchKeyedChildren = function (oldChildren, newChildren, container, anchor) {
+            var i = 0;
+            var newChildrenLength = newChildren.length;
+            var oldChildrenEnd = oldChildren.length - 1;
+            var newChildrenEnd = newChildrenLength - 1;
+            // 1.从前往后
+            while (i <= oldChildrenEnd && i <= newChildrenEnd) {
+                console.log('one', i);
+                var oldVNode = oldChildren[i];
+                var newVNode = newChildren[i];
+                if (isSameVNodeType(oldVNode, newVNode)) {
+                    patch(oldVNode, newVNode, container, anchor);
+                }
+                else {
+                    break;
+                }
+                i++;
+            }
+            // 2.从后往前
+            while (i <= oldChildrenEnd && i <= newChildrenEnd) {
+                console.log('two', i);
+                var oldVNode = oldChildren[oldChildrenEnd];
+                var newVNode = newChildren[newChildrenEnd];
+                if (isSameVNodeType(oldVNode, newVNode)) {
+                    patch(oldVNode, newVNode, container, anchor);
+                }
+                else {
+                    break;
+                }
+                oldChildrenEnd--;
+                newChildrenEnd--;
+            }
+            // 3.newChildren比oldChildren多
+            if (i > oldChildrenEnd) {
+                if (i <= newChildrenEnd) {
+                    var nextpos = newChildrenEnd + 1;
+                    var anchor_1 = nextpos < newChildrenLength ? normalizeVNode(newChildren[nextpos]).el : null;
+                    while (i <= newChildrenEnd) {
+                        patch(null, newChildren[i], container, anchor_1);
+                        i++;
+                    }
+                }
+            }
+            // 4.newChildren比oldChildren少
+            if (i > newChildrenEnd) {
+                while (i <= oldChildrenEnd) {
+                    unmount(oldChildren[i]);
+                    i++;
+                }
+            }
+            // 5.乱序
         };
         var patchChildren = function (oldVNode, newVNode, container, anchor) {
             // 获取新旧vnode的children和shapeFlag
@@ -733,7 +817,12 @@ var Vue = (function (exports) {
                 }
             }
             else {
-                if (oldShapeFlag & 16 /* ShapeFlags.ARRAY_CHILDREN */) ;
+                if (oldShapeFlag & 16 /* ShapeFlags.ARRAY_CHILDREN */) {
+                    if (shapeFlag & 16 /* ShapeFlags.ARRAY_CHILDREN */) {
+                        // TODO diff
+                        patchKeyedChildren(c1, c2, container, anchor);
+                    }
+                }
                 else {
                     if (oldShapeFlag & 8 /* ShapeFlags.TEXT_CHILDREN */) {
                         hostSetElementText(container, '');
@@ -799,7 +888,7 @@ var Vue = (function (exports) {
                 mountChildren(newVNode.children, container, anchor);
             }
             else {
-                patchChildren(oldVNode, newVNode, container);
+                patchChildren(oldVNode, newVNode, container, anchor);
             }
         };
         var processComponent = function (oldVNode, newVNode, container, anchor) {

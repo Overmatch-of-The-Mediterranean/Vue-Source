@@ -22,13 +22,24 @@
             },
             render () {
                 return h('div', this.msg)
-            }
+            },
+            beforeCreate () {
+                console.log('beforeCreate', this.msg)
+            },
+            created () {
+                console.log('created', this.msg)
+            },
+            beforeMount () {
+                console.log('beforeMount', this.msg)
+            },
+            mounted () {
+                console.log('mounted', this.msg)
+            },
         }
 
         const vnode1 = h(component1)
 
         render(vnode1, document.querySelector('#app'))
-
 
 
 

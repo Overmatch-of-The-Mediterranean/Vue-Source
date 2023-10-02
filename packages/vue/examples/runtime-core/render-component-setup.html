@@ -13,15 +13,20 @@
     <div id="app"></div>
 
     <script>
-        const { h, render } = Vue
+        const { h, render, reactive } = Vue
         const component1 = {
-            data () {
-                return {
+
+            setup () {
+                const obj = reactive({
                     msg: 'hello world!!!'
-                }
-            },
-            render () {
-                return h('div', this.msg)
+                })
+
+                setTimeout(() => {
+                    obj.msg = 'update world!!!'
+                }, 2000)
+
+                return () => h('div', obj.msg)
+
             }
         }
 

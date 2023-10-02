@@ -88,7 +88,7 @@ export function trigger(target: object, key: string | symbol, value: unknown) {
 
 export function triggerEffects(dep:Dep) { 
     let effects = isArray(dep) ? dep : [...dep]
-
+    
     for (const effect of effects) { 
         if (effect.computed) { 
             triggerEffect(effect)

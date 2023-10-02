@@ -37,25 +37,45 @@ function baseCreateRenderer(options: RendererOptions) {
         setText: hostSetText
     } = options
     
-    // 组件挂载
+
     const setupRenderEffect = (instance,initialVNode,container,anchor)=>{
         const componentUpdateFn = () => { 
-            if (!instance.isMounted) { 
+            if (!instance.isMounted) {
+                // 组件挂载
                 const { bm, m } = instance
                 const subTree = instance.subTree = renderComponentRoot(instance)
 
-                if (bm) { 
+                if (bm) {
                     bm()
-                 }
+                }
 
                 patch(null, subTree, container, anchor)
                 
-                if (m) { 
+                if (m) {
                     m()
-                 }
+                }
 
                 initialVNode.el = subTree.el
+                instance.isMounted = true
+            } else { 
+                // 组件更新
+                let { next, vnode } = instance
+
+                if (!next) { 
+                    next = vnode
+                }
+                
+                const nextTree = renderComponentRoot(instance)
+
+                const preTree = instance.subTree
+                instance.subTree = nextTree
+
+                patch(preTree, nextTree, container, anchor)
+
+                next.el = nextTree.el
+                
              }
+
          }
 
         const effect = instance.effect = new ReactiveEffect(
@@ -88,8 +108,10 @@ function baseCreateRenderer(options: RendererOptions) {
         // 1.创建DOM元素
         const el = vnode.el = hostCreateElement(type)
         // 2.设置DOM的文本
-        if (shapeFlag & ShapeFlags.TEXT_CHILDREN) { 
-            hostSetElementText(el,vnode.children)
+        if (shapeFlag & ShapeFlags.TEXT_CHILDREN) {
+            hostSetElementText(el, vnode.children)
+        } else if(shapeFlag & ShapeFlags.ARRAY_CHILDREN) { 
+            mountChildren(vnode.children,el,null)
          }
         // 3.处理props
         if (props) { 
@@ -125,6 +147,66 @@ function baseCreateRenderer(options: RendererOptions) {
          }
     }
     
+    // diff算法核心
+    const patchKeyedChildren = (oldChildren, newChildren, container, anchor) => {
+
+        let i = 0
+        const newChildrenLength = newChildren.length
+        let oldChildrenEnd = oldChildren.length - 1
+        let newChildrenEnd = newChildrenLength - 1
+
+
+        // 1.从前往后
+        while (i <= oldChildrenEnd && i <= newChildrenEnd) {
+            console.log('one',i);
+            const oldVNode = oldChildren[i]
+            const newVNode = newChildren[i]
+
+            
+            
+            if (isSameVNodeType(oldVNode, newVNode)) {
+                patch(oldVNode, newVNode, container, anchor)
+            } else {
+                break
+            }
+            i++
+        }
+
+        // 2.从后往前
+        while (i <= oldChildrenEnd && i <= newChildrenEnd) {
+            console.log('two',i);
+            const oldVNode = oldChildren[oldChildrenEnd]
+            const newVNode = newChildren[newChildrenEnd]
+
+            if (isSameVNodeType(oldVNode, newVNode)) {
+                patch(oldVNode, newVNode, container, anchor)
+            } else {
+                break
+            }
+            oldChildrenEnd--
+            newChildrenEnd--
+        }
+
+        // 3.newChildren比oldChildren多
+        if (i > oldChildrenEnd) {
+            if (i <= newChildrenEnd) {
+                const nextpos = newChildrenEnd + 1
+                const anchor = nextpos < newChildrenLength ? normalizeVNode(newChildren[nextpos]).el:null
+                while (i <= newChildrenEnd) { 
+                    patch(null, newChildren[i], container, anchor)
+                    i++
+                 }
+             }
+         }
+        // 4.newChildren比oldChildren少
+        if (i > newChildrenEnd) { 
+            while (i <= oldChildrenEnd) {
+                unmount(oldChildren[i])
+                i++
+             }
+         }
+        // 5.乱序
+     }
 
 
     const patchChildren = (oldVNode, newVNode,container,anchor) => { 
@@ -147,6 +229,7 @@ function baseCreateRenderer(options: RendererOptions) {
             if (oldShapeFlag & ShapeFlags.ARRAY_CHILDREN) {
                 if (shapeFlag & ShapeFlags.ARRAY_CHILDREN) {
                     // TODO diff
+                    patchKeyedChildren(c1,c2,container,anchor)
                 } else {
                     // TODO 卸载操作    
                 }
@@ -154,7 +237,8 @@ function baseCreateRenderer(options: RendererOptions) {
                 if (oldShapeFlag & ShapeFlags.TEXT_CHILDREN) { 
                     hostSetElementText(container, '')
                 }
-                if (shapeFlag & ShapeFlags.ARRAY_CHILDREN) { 
+                if (shapeFlag & ShapeFlags.ARRAY_CHILDREN) {
+                    
                     // 单独挂载
                     // mountElement(c2,container,null)
                  }
