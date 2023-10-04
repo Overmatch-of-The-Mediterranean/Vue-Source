@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+</head>
+
+<body>
+
+    <script>
+        function getSequence () {
+            debugger
+            const p = arr.slice()
+            const result = [0]
+            let i, j, u, v, c
+            const len = arr.length
+
+
+            for (i = 0; i < len; i++) {
+                const arrI = arr[i]
+                // 1.判断新元素是否比递增子序列最后一个索引对应的元素要大
+                // 如果大，则在result中记录该元素的索引
+                // 否则，进行二分查找
+                if (arrI !== 0) {
+                    j = result[result.length - 1]
+                    if (arr[j] < arrI) {
+                        p[i] = j
+                        result.push(i)
+                        continue
+                    }
+
+                    // 2.二分查找
+                    // 因为新元素比result最后一个索引对应的元素值要小
+                    // 所以，要二分查找到result中，最后一个索引之前的所有对应的元素中，比新元素大的中的最小元素
+                    // 找到后进行索引的替换
+                    u = 0
+                    v = result.length - 1
+                    while (u < v) {
+                        c = (u + v) >> 1
+                        if (arr[result[c]] < arrI) {
+                            u = c + 1
+                        } else {
+                            v = c
+                        }
+                    }
+                    // 3.索引替换
+                    if (arrI < arr[result[u]]) {
+                        if (u > 0) {
+                            p[i] = result[u - 1]
+                        }
+                        result[u] = i
+                    }
+                }
+            }
+            u = result.length
+            v = result[u - 1]
+            while (u-- > 0) {
+                result[u] = v
+                v = p[v]
+            }
+            return result
+        }
+
+        const arr = [1, 3, 2, 4, 6, 5]
+        getSequence(arr)
+    </script>
+</body>
+
+</html>

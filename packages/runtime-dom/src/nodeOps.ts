@@ -1,7 +1,7 @@
 const doc = document
 
 export const nodeOps = { 
-    insert(child: Element, parent: Element, anchor) { 
+    insert(child, parent, anchor) { 
         parent.insertBefore(child, anchor || null)
     },
     createElement(tag: string) { 

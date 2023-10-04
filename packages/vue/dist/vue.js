@@ -753,7 +753,7 @@ var Vue = (function (exports) {
             }
         };
         // diff算法核心
-        var patchKeyedChildren = function (oldChildren, newChildren, container, anchor) {
+        var patchKeyedChildren = function (oldChildren, newChildren, container, parentAnchor) {
             var i = 0;
             var newChildrenLength = newChildren.length;
             var oldChildrenEnd = oldChildren.length - 1;
@@ -764,7 +764,7 @@ var Vue = (function (exports) {
                 var oldVNode = oldChildren[i];
                 var newVNode = newChildren[i];
                 if (isSameVNodeType(oldVNode, newVNode)) {
-                    patch(oldVNode, newVNode, container, anchor);
+                    patch(oldVNode, newVNode, container, parentAnchor);
                 }
                 else {
                     break;
@@ -777,7 +777,7 @@ var Vue = (function (exports) {
                 var oldVNode = oldChildren[oldChildrenEnd];
                 var newVNode = newChildren[newChildrenEnd];
                 if (isSameVNodeType(oldVNode, newVNode)) {
-                    patch(oldVNode, newVNode, container, anchor);
+                    patch(oldVNode, newVNode, container, parentAnchor);
                 }
                 else {
                     break;
@@ -789,21 +789,104 @@ var Vue = (function (exports) {
             if (i > oldChildrenEnd) {
                 if (i <= newChildrenEnd) {
                     var nextpos = newChildrenEnd + 1;
-                    var anchor_1 = nextpos < newChildrenLength ? normalizeVNode(newChildren[nextpos]).el : null;
+                    var anchor = nextpos < newChildrenLength ? normalizeVNode(newChildren[nextpos]).el : null;
                     while (i <= newChildrenEnd) {
-                        patch(null, newChildren[i], container, anchor_1);
+                        patch(null, newChildren[i], container, anchor);
                         i++;
                     }
                 }
             }
             // 4.newChildren比oldChildren少
-            if (i > newChildrenEnd) {
+            else if (i > newChildrenEnd) {
                 while (i <= oldChildrenEnd) {
                     unmount(oldChildren[i]);
                     i++;
                 }
             }
             // 5.乱序
+            else {
+                debugger;
+                var s1 = i; // prev starting index
+                var s2 = i; // next starting index
+                // 5.1 build key:index map for newChildren
+                // 建立newChildren中child的key所对应的index索引
+                var keyToNewIndexMap = new Map();
+                for (i = s2; i <= newChildrenEnd; i++) {
+                    var nextChild = normalizeVNode(newChildren[i]);
+                    if (nextChild.key != null) {
+                        keyToNewIndexMap.set(nextChild.key, i);
+                    }
+                }
+                // 5.2 遍历oldChildren，进行patch和unmount操作
+                var j = void 0;
+                var patched = 0;
+                var toBePatched = newChildrenEnd - s2 + 1;
+                var moved = false;
+                var maxNewIndexSoFar = 0;
+                var newIndexToOldIndexMap = new Array(toBePatched);
+                for (i = 0; i < toBePatched; i++)
+                    newIndexToOldIndexMap[i] = 0;
+                for (i = s1; i <= oldChildrenEnd; i++) {
+                    var prevChild = oldChildren[i];
+                    if (patched >= toBePatched) {
+                        unmount(prevChild);
+                        continue;
+                    }
+                    var newIndex = void 0;
+                    if (prevChild.key != null) {
+                        newIndex = keyToNewIndexMap.get(prevChild.key);
+                    }
+                    else {
+                        for (j = s2; j <= newChildrenEnd; j++) {
+                            if (newIndexToOldIndexMap[j - s2] === 0 &&
+                                isSameVNodeType(prevChild, newChildren[j])) {
+                                newIndex = j;
+                                break;
+                            }
+                        }
+                    }
+                    if (newIndex === undefined) {
+                        unmount(prevChild);
+                    }
+                    else {
+                        newIndexToOldIndexMap[newIndex - s2] = i + 1;
+                        if (newIndex >= maxNewIndexSoFar) {
+                            maxNewIndexSoFar = newIndex;
+                        }
+                        else {
+                            moved = true;
+                        }
+                        patch(prevChild, newChildren[newIndex], container, null);
+                        patched++;
+                    }
+                }
+                // 5.3 移动和挂载
+                // 最长递增子序列
+                var increasingNewIndexSequence = moved
+                    ? getSequence(newIndexToOldIndexMap)
+                    : [];
+                j = increasingNewIndexSequence.length - 1;
+                for (i = toBePatched - 1; i >= 0; i--) {
+                    var nextIndex = s2 + i;
+                    var nextChild = newChildren[nextIndex];
+                    var anchor = nextIndex + 1 < newChildrenLength ? newChildren[nextIndex + 1].el : parentAnchor;
+                    if (newIndexToOldIndexMap[i] === 0) {
+                        patch(null, nextChild, container, anchor);
+                    }
+                    else if (moved) {
+                        if (j < 0 || i !== increasingNewIndexSequence[j]) {
+                            move(nextChild, container, anchor);
+                        }
+                        else {
+                            j--;
+                        }
+                    }
+                }
+            }
+        };
+        var move = function (vnode, container, anchor) {
+            var el = vnode.el;
+            hostInsert(el, container, anchor);
         };
         var patchChildren = function (oldVNode, newVNode, container, anchor) {
             // 获取新旧vnode的children和shapeFlag
@@ -944,6 +1027,56 @@ var Vue = (function (exports) {
         return {
             render: render
         };
+    }
+    // 得到最长递增子序列
+    function getSequence(arr) {
+        var p = arr.slice();
+        var result = [0];
+        var i, j, u, v, c;
+        var len = arr.length;
+        for (i = 0; i < len; i++) {
+            var arrI = arr[i];
+            // 1.判断新元素是否比递增子序列最后一个索引对应的元素要大
+            // 如果大，则在result中记录该元素的索引
+            // 否则，进行二分查找
+            if (arrI !== 0) {
+                j = result[result.length - 1];
+                if (arr[j] < arrI) {
+                    p[i] = j;
+                    result.push(i);
+                    continue;
+                }
+                // 2.二分查找
+                // 因为新元素比result最后一个索引对应的元素值要小
+                // 所以，要二分查找到result中，最后一个索引之前的所有对应的元素中，比新元素大的中的最小元素
+                // 找到后进行索引的替换
+                u = 0;
+                v = result.length - 1;
+                while (u < v) {
+                    c = (u + v) >> 1;
+                    if (arr[result[c]] < arrI) {
+                        u = c + 1;
+                    }
+                    else {
+                        v = c;
+                    }
+                }
+                // 3.索引替换
+                if (arrI < arr[result[u]]) {
+                    if (u > 0) {
+                        p[i] = result[u - 1];
+                    }
+                    result[u] = i;
+                }
+            }
+        }
+        u = result.length;
+        v = result[u - 1];
+        while (u-- > 0) {
+            result[u] = v;
+            v = p[v];
+        }
+        return result;
     }
 
     function patchClass(el, value) {
@@ -1097,9 +1230,131 @@ var Vue = (function (exports) {
         (_a = ensureRenderer()).render.apply(_a, __spreadArray([], __read(arg), false));
     };
 
+    function createParserContext(content) {
+        return {
+            source: content
+        };
+    }
+    function baseParse(content) {
+        var context = createParserContext(content);
+        var children = parseChildren(context, []);
+        // console.log(children);
+        return createRoot(children);
+    }
+    function createRoot(children) {
+        return {
+            type: 0 /* NodeTypes.ROOT */,
+            children: children,
+            loc: {}
+        };
+    }
+    function parseChildren(context, ancestors) {
+        var nodes = [];
+        while (!isEnd(context, ancestors)) {
+            var s = context.source;
+            var node = void 0;
+            if (startsWith(s, '{{')) ;
+            else if (s[0] === '<') {
+                if (/[a-z]/i.test(s[1])) {
+                    node = parseElement(context, ancestors);
+                }
+            }
+            if (!node) {
+                node = parseText(context);
+            }
+            pushNode(nodes, node);
+        }
+        return nodes;
+    }
+    function parseElement(context, ancestors) {
+        // 1.处理标签的开始
+        var element = parseTag(context);
+        // 2.处理标签的children
+        ancestors.push(element);
+        var children = parseChildren(context, ancestors);
+        ancestors.pop(ancestors);
+        element.children = children;
+        // 3.处理标签的结束
+        if (startsWithEndTagOpen(context.source, element.tag)) {
+            parseTag(context);
+        }
+        return element;
+    }
+    function parseTag(context, type) {
+        debugger;
+        var match = /^<\/?([a-z][^\t\r\n\f />]*)/i.exec(context.source);
+        var tag = match[1];
+        // 去除<div
+        advanceBy(context, match[0].length);
+        var isSelfClosing = startsWith(context.source, '/>');
+        // >
+        advanceBy(context, isSelfClosing ? 2 : 1);
+        return {
+            type: 1 /* NodeTypes.ELEMENT */,
+            tag: tag,
+            tagType: 0 /* ElementTypes.ELEMENT */,
+            props: [],
+            children: []
+        };
+    }
+    function parseText(context) {
+        var endTokens = ['<', '{{'];
+        var endIndex = context.source.length;
+        for (var i = 0; i < endTokens.length; i++) {
+            var index = context.source.indexOf(endTokens[i], i);
+            if (index !== -1 && endIndex > index) {
+                endIndex = index;
+            }
+        }
+        var content = parseTextData(context, endIndex);
+        return {
+            type: 2 /* NodeTypes.TEXT */,
+            content: content
+        };
+    }
+    function parseTextData(context, length) {
+        var rawText = context.source.slice(0, length);
+        advanceBy(context, length);
+        return rawText;
+    }
+    function pushNode(nodes, node) {
+        nodes.push(node);
+    }
+    function isEnd(context, ancestors) {
+        var s = context.source;
+        if (startsWith(s, '</')) {
+            for (var i = ancestors.length - 1; i >= 0; i--) {
+                if (startsWithEndTagOpen(s, ancestors[i].tag)) ;
+                return true;
+            }
+        }
+        return !s;
+    }
+    function startsWithEndTagOpen(source, tag) {
+        return startsWith(source, '</');
+    }
+    function startsWith(source, searchString) {
+        return source.startsWith(searchString);
+    }
+    function advanceBy(context, numberOfCharacters) {
+        var source = context.source;
+        context.source = source.slice(numberOfCharacters);
+    }
+
+    function baseCompile(template, options) {
+        var ast = baseParse(template);
+        console.log(JSON.stringify(ast));
+        return {};
+    }
+
+    function compile(template, options) {
+        return baseCompile(template);
+    }
+
     exports.Comment = Comment;
     exports.Fragment = Fragment;
     exports.Text = Text;
+    exports.compile = compile;
     exports.computed = computed;
     exports.effect = effect;
     exports.h = h;

@@ -148,7 +148,7 @@ function baseCreateRenderer(options: RendererOptions) {
     }
     
     // diff算法核心
-    const patchKeyedChildren = (oldChildren, newChildren, container, anchor) => {
+    const patchKeyedChildren = (oldChildren, newChildren, container, parentAnchor) => {
 
         let i = 0
         const newChildrenLength = newChildren.length
@@ -165,7 +165,7 @@ function baseCreateRenderer(options: RendererOptions) {
             
             
             if (isSameVNodeType(oldVNode, newVNode)) {
-                patch(oldVNode, newVNode, container, anchor)
+                patch(oldVNode, newVNode, container, parentAnchor)
             } else {
                 break
             }
@@ -179,7 +179,7 @@ function baseCreateRenderer(options: RendererOptions) {
             const newVNode = newChildren[newChildrenEnd]
 
             if (isSameVNodeType(oldVNode, newVNode)) {
-                patch(oldVNode, newVNode, container, anchor)
+                patch(oldVNode, newVNode, container, parentAnchor)
             } else {
                 break
             }
@@ -191,23 +191,118 @@ function baseCreateRenderer(options: RendererOptions) {
         if (i > oldChildrenEnd) {
             if (i <= newChildrenEnd) {
                 const nextpos = newChildrenEnd + 1
-                const anchor = nextpos < newChildrenLength ? normalizeVNode(newChildren[nextpos]).el:null
-                while (i <= newChildrenEnd) { 
+                const anchor = nextpos < newChildrenLength ? normalizeVNode(newChildren[nextpos]).el : null
+                while (i <= newChildrenEnd) {
                     patch(null, newChildren[i], container, anchor)
                     i++
-                 }
-             }
-         }
+                }
+            }
+        }
         // 4.newChildren比oldChildren少
-        if (i > newChildrenEnd) { 
+        else if (i > newChildrenEnd) {
             while (i <= oldChildrenEnd) {
                 unmount(oldChildren[i])
                 i++
+            }
+        }
+            
+        // 5.乱序
+        else { 
+            debugger
+            const s1 = i // prev starting index
+            const s2 = i // next starting index
+
+            // 5.1 build key:index map for newChildren
+            // 建立newChildren中child的key所对应的index索引
+
+            const keyToNewIndexMap: Map<string | number | symbol, number> = new Map()
+            for (i = s2; i <= newChildrenEnd; i++) { 
+                const nextChild = normalizeVNode(newChildren[i])
+                if (nextChild.key != null) { 
+                    keyToNewIndexMap.set(nextChild.key,i)
+                 }
+            }
+            
+            // 5.2 遍历oldChildren，进行patch和unmount操作
+            let j
+            let patched = 0
+            const toBePatched = newChildrenEnd - s2 + 1
+            let moved = false
+            let maxNewIndexSoFar = 0
+
+            const newIndexToOldIndexMap = new Array(toBePatched)
+            for (i = 0; i < toBePatched; i++) newIndexToOldIndexMap[i] = 0
+            
+            for (i = s1; i <= oldChildrenEnd; i++) { 
+                const prevChild = oldChildren[i]
+
+                if (patched >= toBePatched) { 
+                    unmount(prevChild)
+                    continue
+                }
+                
+                let newIndex
+                if (prevChild.key != null) {
+                    newIndex = keyToNewIndexMap.get(prevChild.key)
+                } else { 
+                    for (j = s2; j <= newChildrenEnd; j++) { 
+                        if (
+                            newIndexToOldIndexMap[j - s2] === 0 &&
+                            isSameVNodeType(prevChild, newChildren[j])
+                        ) { 
+                            newIndex = j
+                            break
+                            }
+                     }
+                }
+                
+                if (newIndex === undefined) {
+                    unmount(prevChild)
+                } else { 
+                    newIndexToOldIndexMap[newIndex - s2] = i + 1
+                    if (newIndex >= maxNewIndexSoFar) {
+                        maxNewIndexSoFar = newIndex
+                    } else { 
+                        moved = true
+                    }
+                    
+                    patch(prevChild, newChildren[newIndex], container, null)
+                    patched++
+                 }
+             }
+
+            // 5.3 移动和挂载
+
+            // 最长递增子序列
+            const increasingNewIndexSequence = moved
+                ? getSequence(newIndexToOldIndexMap)
+                : []
+
+            j = increasingNewIndexSequence.length - 1
+
+            for (i = toBePatched - 1; i >= 0; i--) { 
+                const nextIndex = s2 + i
+                const nextChild = newChildren[nextIndex]
+                const anchor = nextIndex + 1 < newChildrenLength ? newChildren[nextIndex + 1].el : parentAnchor
+                if (newIndexToOldIndexMap[i] === 0) {
+                    patch(null, nextChild, container, anchor)
+                } else if (moved) { 
+                    if (j < 0 || i !== increasingNewIndexSequence[j]) {
+                        move(nextChild, container, anchor)
+                    } else { 
+                        j--
+                    }
+                 }
              }
          }
-        // 5.乱序
+        
      }
 
+    const move = (vnode,container,anchor) => { 
+        const { el } = vnode
+
+        hostInsert(el!, container, anchor)
+    }
 
     const patchChildren = (oldVNode, newVNode,container,anchor) => { 
         
@@ -375,4 +470,58 @@ function baseCreateRenderer(options: RendererOptions) {
     return { 
         render
      }
+}
+
+
+// 得到最长递增子序列
+function getSequence (arr:number[]):number[] {
+    const p = arr.slice()
+    const result = [0]
+    let i, j, u, v, c
+    const len = arr.length
+
+
+    for (i = 0; i < len; i++) {
+        const arrI = arr[i]
+        // 1.判断新元素是否比递增子序列最后一个索引对应的元素要大
+        // 如果大，则在result中记录该元素的索引
+        // 否则，进行二分查找
+        if (arrI !== 0) {
+            j = result[result.length - 1]
+            if (arr[j] < arrI) {
+                p[i] = j
+                result.push(i)
+                continue
+            }
+
+            // 2.二分查找
+            // 因为新元素比result最后一个索引对应的元素值要小
+            // 所以，要二分查找到result中，最后一个索引之前的所有对应的元素中，比新元素大的中的最小元素
+            // 找到后进行索引的替换
+            u = 0
+            v = result.length - 1
+            while (u < v) {
+                c = (u + v) >> 1
+                if (arr[result[c]] < arrI) {
+                    u = c + 1
+                } else {
+                    v = c
+                }
+            }
+            // 3.索引替换
+            if (arrI < arr[result[u]]) {
+                if (u > 0) {
+                    p[i] = result[u - 1]
+                }
+                result[u] = i
+            }
+        }
+    }
+    u = result.length
+    v = result[u - 1]
+    while (u-- > 0) {
+        result[u] = v
+        v = p[v]
+    }
+    return result
 }
