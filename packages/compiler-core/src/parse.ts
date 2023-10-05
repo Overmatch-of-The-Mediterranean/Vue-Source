@@ -83,7 +83,7 @@ function parseElement(context: ParserContext, ancestors) {
 }
 
 function parseTag(context: ParserContext, type: TagType) { 
-    debugger
+    // debugger
     const match: any = /^<\/?([a-z][^\t\r\n\f />]*)/i.exec(context.source)
 
     const tag = match[1]
