@@ -26,7 +26,7 @@ export const transformText = (node, context) => {
                                 currentContainer = children[i] = createCompoundExpression([child], child.loc)
                             }
 
-                            currentContainer.children.push(`` + ``, next)
+                            currentContainer.children.push(` + `, next)
                             children.splice(j, 1)
                             j--
                         } else { 

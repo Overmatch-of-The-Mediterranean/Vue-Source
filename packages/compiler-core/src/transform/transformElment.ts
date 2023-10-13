@@ -12,7 +12,7 @@ export const transformElement = (node, context) => {
         
         let vnodeTag = `"${tag}"`
         let vnodeProps = []
-        let vnodeChildren = []
+        let vnodeChildren = node.children
 
         node.codegenNode = createVNodeCall(context,vnodeTag,vnodeProps,vnodeChildren)
      }

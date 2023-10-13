@@ -1,6 +1,8 @@
 var Vue = (function (exports) {
     'use strict';
 
+    var toDisplayString = function (val) { return String(val); };
+
     var isArray = Array.isArray;
     var extend = Object.assign;
     /**
@@ -502,6 +504,8 @@ var Vue = (function (exports) {
             shapeFlag: shapeFlag,
             key: (props === null || props === void 0 ? void 0 : props.key) || null
         };
+        // debugger
+        console.log('vnode', VNode);
         normalizeChildren(VNode, children);
         return VNode;
     }
@@ -537,6 +541,9 @@ var Vue = (function (exports) {
     var cloneIfMounted = function (child) {
         return child;
     };
+    function createCommentVNode(text) {
+        return createVNode(Comment, null, text);
+    }
 
     // 主要做对参数的处理，然后返回VNode
     function h(type, propsOrChildren, children) {
@@ -578,6 +585,7 @@ var Vue = (function (exports) {
     }
 
     var uid = 0;
+    var compile$1;
     function createComponentInstance(vnode) {
         var type = vnode.type;
         var instance = {
@@ -622,9 +630,18 @@ var Vue = (function (exports) {
     function finishComponentSetup(instance) {
         var Component = instance.type;
         if (!instance.render) {
+            if (compile$1 && !Component.render) {
+                if (Component.template) {
+                    var template = Component.template;
+                    Component.render = compile$1(template);
+                }
+            }
             instance.render = Component.render;
         }
         applyOptions(instance);
+    }
+    function registerRuntimeCompiler(_compile) {
+        compile$1 = _compile;
     }
     function applyOptions(instance) {
         // debugger
@@ -661,9 +678,24 @@ var Vue = (function (exports) {
         var render = instance.render, vnode = instance.vnode, data = instance.data;
         var result;
         if (vnode.shapeFlag & 4 /* ShapeFlags.STATEFUL_COMPONENT */) {
-            result = normalizeVNode(render.call(data));
+            result = normalizeVNode(render.call(data, data));
         }
         return result;
+    }
+
+    function createAppAPI(render) {
+        return function createApp(rootComponent, rootProps) {
+            if (rootProps === void 0) { rootProps = null; }
+            var app = {
+                _component: rootComponent,
+                _container: null,
+                mount: function (rootContainer) {
+                    var vnode = createVNode(rootComponent, rootProps, null);
+                    render(vnode, rootContainer);
+                }
+            };
+            return app;
+        };
     }
 
     function createRenderer(options) {
@@ -677,6 +709,7 @@ var Vue = (function (exports) {
                     // 组件挂载
                     var bm = instance.bm, m = instance.m;
                     var subTree = instance.subTree = renderComponentRoot(instance);
+                    console.log('subTree', subTree);
                     if (bm) {
                         bm();
                     }
@@ -805,7 +838,7 @@ var Vue = (function (exports) {
             }
             // 5.乱序
             else {
-                debugger;
+                // debugger
                 var s1 = i; // prev starting index
                 var s2 = i; // next starting index
                 // 5.1 build key:index map for newChildren
@@ -891,8 +924,8 @@ var Vue = (function (exports) {
         var patchChildren = function (oldVNode, newVNode, container, anchor) {
             // 获取新旧vnode的children和shapeFlag
             var c1 = oldVNode && oldVNode.children;
-            var oldShapeFlag = oldVNode && oldVNode.shapeFlag;
-            var c2 = newVNode.children;
+            var oldShapeFlag = oldVNode ? oldVNode.shapeFlag : 0;
+            var c2 = newVNode && newVNode.children;
             var shapeFlag = newVNode.shapeFlag;
             if (shapeFlag & 8 /* ShapeFlags.TEXT_CHILDREN */) {
                 if (c2 !== c1) {
@@ -1015,6 +1048,7 @@ var Vue = (function (exports) {
             hostRemove(vnode.el);
         };
         var render = function (vnode, container) {
+            // debugger
             if (vnode == null) {
                 // TODO卸载
                 unmount(container._vnode);
@@ -1025,7 +1059,8 @@ var Vue = (function (exports) {
             container._vnode = vnode;
         };
         return {
-            render: render
+            render: render,
+            createApp: createAppAPI(render)
         };
     }
     // 得到最长递增子序列
@@ -1229,6 +1264,30 @@ var Vue = (function (exports) {
         }
         (_a = ensureRenderer()).render.apply(_a, __spreadArray([], __read(arg), false));
     };
+    var createApp = function () {
+        var _a;
+        var arg = [];
+        for (var _i = 0; _i < arguments.length; _i++) {
+            arg[_i] = arguments[_i];
+        }
+        var app = (_a = ensureRenderer()).createApp.apply(_a, __spreadArray([], __read(arg), false));
+        var mount = app.mount;
+        app.mount = function (containerOrSelector) {
+            var container = normalizeContainer(containerOrSelector);
+            if (!container) {
+                return;
+            }
+            mount(container);
+        };
+        return app;
+    };
+    function normalizeContainer(container) {
+        if (isString(container)) {
+            var res = document.querySelector(container);
+            return res;
+        }
+        return container;
+    }
 
     function createParserContext(content) {
         return {
@@ -1253,7 +1312,10 @@ var Vue = (function (exports) {
         while (!isEnd(context, ancestors)) {
             var s = context.source;
             var node = void 0;
-            if (startsWith(s, '{{')) ;
+            if (startsWith(s, '{{')) {
+                // TODO：{{
+                node = parseInterpolation(context);
+            }
             else if (s[0] === '<') {
                 if (/[a-z]/i.test(s[1])) {
                     node = parseElement(context, ancestors);
@@ -1266,9 +1328,25 @@ var Vue = (function (exports) {
         }
         return nodes;
     }
+    function parseInterpolation(context) {
+        var _a = __read(['{{', '}}'], 2), open = _a[0], close = _a[1];
+        advanceBy(context, open.length);
+        var closeIndex = context.source.indexOf(close);
+        var preTrimContent = parseTextData(context, closeIndex);
+        var content = preTrimContent.trim();
+        advanceBy(context, close.length);
+        return {
+            type: 5 /* NodeTypes.INTERPOLATION */,
+            content: {
+                type: 4 /* NodeTypes.SIMPLE_EXPRESSION */,
+                isStatic: false,
+                content: content
+            }
+        };
+    }
     function parseElement(context, ancestors) {
         // 1.处理标签的开始
-        var element = parseTag(context);
+        var element = parseTag(context, 0 /* TagType.Start */);
         // 2.处理标签的children
         ancestors.push(element);
         var children = parseChildren(context, ancestors);
@@ -1276,7 +1354,7 @@ var Vue = (function (exports) {
         element.children = children;
         // 3.处理标签的结束
         if (startsWithEndTagOpen(context.source, element.tag)) {
-            parseTag(context);
+            parseTag(context, 1 /* TagType.End */);
         }
         return element;
     }
@@ -1286,6 +1364,9 @@ var Vue = (function (exports) {
         var tag = match[1];
         // 去除<div
         advanceBy(context, match[0].length);
+        advanceSpaces(context);
+        // 属性和指令的处理
+        var props = parseAttributes(context, type);
         var isSelfClosing = startsWith(context.source, '/>');
         // >
         advanceBy(context, isSelfClosing ? 2 : 1);
@@ -1293,8 +1374,81 @@ var Vue = (function (exports) {
             type: 1 /* NodeTypes.ELEMENT */,
             tag: tag,
             tagType: 0 /* ElementTypes.ELEMENT */,
-            props: [],
+            props: props,
             children: []
+        };
+    }
+    function parseAttributes(context, type) {
+        var props = [];
+        var attributeNames = new Set();
+        while (context.source.length > 0 &&
+            !startsWith(context.source, '>') &&
+            !startsWith(context.source, '/>')) {
+            var attr = parseAttribute(context, attributeNames);
+            if (type === 0 /* TagType.Start */) {
+                props.push(attr);
+            }
+            advanceSpaces(context);
+        }
+        return props;
+    }
+    function parseAttribute(context, nameSet) {
+        var match = /^[^\t\r\n\f />][^\t\r\n\f />=]*/.exec(context.source);
+        var name = match[0];
+        nameSet.add(name);
+        advanceBy(context, name.length);
+        var value = undefined;
+        if (/^[\t\r\n\f ]*=/.test(context.source)) {
+            advanceSpaces(context);
+            advanceBy(context, 1);
+            advanceSpaces(context);
+            value = parseAttributeValue(context);
+        }
+        // v-
+        if (/^(v-[A-Za-z0-9-]|:|\.|@|#)/.test(name)) {
+            var match_1 = /(?:^v-([a-z0-9-]+))?(?:(?::|^\.|^@|^#)(\[[^\]]+\]|[^\.]+))?(.+)?$/i.exec(name);
+            var dirName = match_1[1];
+            return {
+                type: 7 /* NodeTypes.DIRECTIVE */,
+                name: dirName,
+                exp: value && {
+                    type: 4 /* NodeTypes.SIMPLE_EXPRESSION */,
+                    content: value.content,
+                    isStatic: false,
+                    loc: {}
+                },
+                art: undefined,
+                modifiers: undefined,
+                loc: {}
+            };
+        }
+        return {
+            type: 6 /* NodeTypes.ATTRIBUTE */,
+            name: name,
+            value: value && {
+                type: 2 /* NodeTypes.TEXT */,
+                content: value.content,
+                loc: {}
+            },
+            loc: {}
+        };
+    }
+    function parseAttributeValue(context) {
+        var content = '';
+        var quote = context.source[0];
+        advanceBy(context, 1);
+        var endIndex = context.source.indexOf(quote);
+        if (endIndex === -1) {
+            content = parseTextData(context, context.source.length);
+        }
+        else {
+            content = parseTextData(context, endIndex);
+            advanceBy(context, 1);
+        }
+        return {
+            content: content,
+            isQuoted: true,
+            loc: {},
         };
     }
     function parseText(context) {
@@ -1336,6 +1490,13 @@ var Vue = (function (exports) {
     function startsWith(source, searchString) {
         return source.startsWith(searchString);
     }
+    function advanceSpaces(context) {
+        var match = /^[\t\r\n\f ]+/.exec(context.source);
+        if (match) {
+            console.log('match', match);
+            advanceBy(context, match[0].length);
+        }
+    }
     function advanceBy(context, numberOfCharacters) {
         var source = context.source;
         context.source = source.slice(numberOfCharacters);
@@ -1345,6 +1506,18 @@ var Vue = (function (exports) {
         var children = root.children;
         return children.length === 1 && child.type === 1 /* NodeTypes.ELEMENT */;
     }
+
+    var _a;
+    var CREATE_ELEMENT_VNODE = Symbol('createElementVNode');
+    var CREATE_VNODE = Symbol('createVNode');
+    var TO_DISPLAY_STRING = Symbol('toDisplayString');
+    var CREATE_COMMENT = Symbol('createCommentVNode');
+    var helperNameMap = (_a = {},
+        _a[CREATE_ELEMENT_VNODE] = 'createElementVNode',
+        _a[CREATE_VNODE] = 'createVNode',
+        _a[TO_DISPLAY_STRING] = 'toDisplayString',
+        _a[CREATE_COMMENT] = 'createCommentVNode',
+        _a);
 
     function createTransformContext(root, _a) {
         var nodeTransforms = _a.nodeTransforms;
@@ -1359,6 +1532,9 @@ var Vue = (function (exports) {
                 var count = context.helpers.get(name) || 0;
                 context.helpers.set(name, count + 1);
                 return name;
+            },
+            replaceNode: function (node) {
+                context.parent.children[context.childrenIndex] = context.currentNode = node;
             }
         };
         return context;
@@ -1389,13 +1565,33 @@ var Vue = (function (exports) {
         for (var i_1 = 0; i_1 < nodeTransforms.length; i_1++) {
             var onExit = nodeTransforms[i_1](node, context);
             if (onExit) {
-                exitFns.push(onExit);
+                if (isArray(onExit)) {
+                    exitFns.push.apply(exitFns, __spreadArray([], __read(onExit), false));
+                }
+                else {
+                    exitFns.push(onExit);
+                }
+            }
+            if (!context.currentNode) {
+                return;
+            }
+            else {
+                node = context.currentNode;
             }
         }
         switch (node.type) {
+            case 10 /* NodeTypes.IF_BRANCH */:
             case 1 /* NodeTypes.ELEMENT */:
             case 0 /* NodeTypes.ROOT */:
                 tranverseChildren(node, context);
+                break;
+            case 5 /* NodeTypes.INTERPOLATION */:
+                context.helper(TO_DISPLAY_STRING);
+                break;
+            case 9 /* NodeTypes.IF */:
+                for (var i_2 = 0; i_2 < node.branches.length; i_2++) {
+                    tranverseNode(node.branches[i_2], context);
+                }
                 break;
         }
         context.currentNode = node;
@@ -1422,14 +1618,32 @@ var Vue = (function (exports) {
         }
         // Vue3支持多个根节点
     }
-
-    var _a;
-    var CREATE_ELEMENT_VNODE = Symbol('createElementVNode');
-    var CREATE_VNODE = Symbol('createVNode');
-    (_a = {},
-        _a[CREATE_ELEMENT_VNODE] = 'createElementVNode',
-        _a[CREATE_VNODE] = 'createVNode',
-        _a);
+    function createStructuralDirectiveTransform(name, fn) {
+        var matches = isString(name)
+            ? function (n) { return n === name; }
+            : function (n) { return name.test(n); };
+        return function (node, context) {
+            // 只去处理和element相关的指令
+            if (node.type === 1 /* NodeTypes.ELEMENT */) {
+                var props = node.props;
+                var exitFns = [];
+                // 构建exitFns
+                for (var i = 0; i < props.length; i++) {
+                    var prop = props[i];
+                    // 对于prop而言，只去处理指令
+                    if (prop.type === 7 /* NodeTypes.DIRECTIVE */ && matches(prop.name)) {
+                        props.splice(i, 1);
+                        i--;
+                        var onExit = fn(node, prop, context);
+                        if (onExit) {
+                            exitFns.push(onExit);
+                        }
+                    }
+                }
+                return exitFns;
+            }
+        };
+    }
 
     function createVNodeCall(context, tag, props, children) {
         if (context) {
@@ -1442,6 +1656,41 @@ var Vue = (function (exports) {
             children: children
         };
     }
+    function createConditionalExpression(test, consquent, alternate, newline) {
+        if (newline === void 0) { newline = true; }
+        return {
+            type: 19 /* NodeTypes.JS_CONDITIONAL_EXPRESSION */,
+            test: test,
+            consquent: consquent,
+            alternate: alternate,
+            newline: newline,
+            loc: {}
+        };
+    }
+    function createSimpleExpression(content, isStatic) {
+        return {
+            type: 4 /* NodeTypes.SIMPLE_EXPRESSION */,
+            loc: {},
+            content: content,
+            isStatic: isStatic
+        };
+    }
+    function createObjectProperty(key, value) {
+        return {
+            type: 16 /* NodeTypes.JS_PROPERTY */,
+            loc: {},
+            key: isString(key) ? createSimpleExpression(key, true) : key,
+            value: value
+        };
+    }
+    function createCallExpression(callee, args) {
+        return {
+            type: 14 /* NodeTypes.JS_CALL_EXPRESSION */,
+            loc: {},
+            callee: callee,
+            arguments: args
+        };
+    }
 
     var transformElement = function (node, context) {
         return function postTransformElement() {
@@ -1452,13 +1701,19 @@ var Vue = (function (exports) {
             var tag = node.tag;
             var vnodeTag = "\"".concat(tag, "\"");
             var vnodeProps = [];
-            var vnodeChildren = [];
+            var vnodeChildren = node.children;
             node.codegenNode = createVNodeCall(context, vnodeTag, vnodeProps, vnodeChildren);
         };
     };
 
     function isText(node) {
         return node.type === 5 /* NodeTypes.INTERPOLATION */ || node.type === 2 /* NodeTypes.TEXT */;
+    }
+    function getVNodeHelper(ssr, isComponent) {
+        return ssr || isComponent ? CREATE_VNODE : CREATE_ELEMENT_VNODE;
+    }
+    function getMemoedVNodeCall(node) {
+        return node;
     }
 
     /**
@@ -1481,7 +1736,7 @@ var Vue = (function (exports) {
                                 if (!currentContainer) {
                                     currentContainer = children[i] = createCompoundExpression([child], child.loc);
                                 }
-                                currentContainer.children.push("" + "", next);
+                                currentContainer.children.push(" + ", next);
                                 children.splice(j, 1);
                                 j--;
                             }
@@ -1503,31 +1758,353 @@ var Vue = (function (exports) {
         };
     }
 
+    var aliasHelper = function (s) { return "".concat(helperNameMap[s], ": _").concat(helperNameMap[s]); };
+    function createCodegenContext(ast) {
+        var context = {
+            code: '',
+            source: ast.loc.source,
+            runtimeGlobalName: 'Vue',
+            indentLevel: 0,
+            isSSR: false,
+            helper: function (key) {
+                return "_".concat(helperNameMap[key]);
+            },
+            push: function (code) {
+                context.code += code;
+            },
+            newline: function () {
+                newline(context.indentLevel);
+            },
+            indent: function () {
+                newline(++context.indentLevel);
+            },
+            deindent: function () {
+                newline(--context.indentLevel);
+            },
+        };
+        function newline(n) {
+            return context.code += '\n' + '  '.repeat(n);
+        }
+        return context;
+    }
+    function generate(ast) {
+        var context = createCodegenContext(ast);
+        var push = context.push, newline = context.newline, indent = context.indent, deindent = context.deindent;
+        /* 构建出
+            const _Vue = Vue
+
+            return
+        */
+        genFunctionPreambal(context);
+        var functionName = "render";
+        var args = ['_ctx', '_cache'];
+        var signature = args.join(', ');
+        /* 构建出
+            const _Vue = Vue
+
+            return function render (_ctx, _cache) {
+        */
+        push("function ".concat(functionName, " (").concat(signature, ") {"));
+        indent();
+        push('with (_ctx) {');
+        indent();
+        /* 构建出
+            const _Vue = Vue
+
+            return function render (_ctx, _cache) {
+              const { createElementVNode: _createElementVNode } = _Vue
+        */
+        var hasHelpers = ast.helpers.length > 0;
+        if (hasHelpers) {
+            push("const { ".concat(ast.helpers.map(aliasHelper).join(', '), " } = _Vue"));
+            push('\n');
+            newline();
+        }
+        newline();
+        /* 构建出
+            const _Vue = Vue
+
+            return function render (_ctx, _cache) {
+              const { createElementVNode: _createElementVNode } = _Vue
+              return _createElementVNode("div", [], ["hello world"])
+            }
+        */
+        push("return ");
+        if (ast.codegenNode) {
+            genNode(ast.codegenNode, context);
+        }
+        else {
+            push("null");
+        }
+        deindent();
+        push('}');
+        deindent();
+        push('}');
+        return {
+            ast: ast,
+            code: context.code
+        };
+    }
+    function genFunctionPreambal(context) {
+        var push = context.push, runtimeGlobalName = context.runtimeGlobalName, newline = context.newline;
+        var VueBinding = runtimeGlobalName;
+        push("const _Vue = ".concat(VueBinding, "\n"));
+        newline();
+        push("return ");
+    }
+    function genNode(node, context) {
+        // debugger
+        switch (node.type) {
+            case 1 /* NodeTypes.ELEMENT */:
+            case 9 /* NodeTypes.IF */:
+                genNode(node.codegenNode, context);
+                break;
+            case 13 /* NodeTypes.VNODE_CALL */:
+                genVNodeCall(node, context);
+                break;
+            case 2 /* NodeTypes.TEXT */:
+                genText(node, context);
+                break;
+            case 4 /* NodeTypes.SIMPLE_EXPRESSION */:
+                genExpression(node, context);
+                break;
+            case 5 /* NodeTypes.INTERPOLATION */:
+                genInterpolation(node, context);
+                break;
+            case 8 /* NodeTypes.COMPOUND_EXPRESSION */:
+                genCompoundExpression(node, context);
+                break;
+            case 1 /* NodeTypes.ELEMENT */:
+                genNode(node.codegenNode, context);
+                break;
+            case 14 /* NodeTypes.JS_CALL_EXPRESSION */:
+                genCallExpression(node, context);
+                break;
+            case 19 /* NodeTypes.JS_CONDITIONAL_EXPRESSION */:
+                genConditionalExpression(node, context);
+                break;
+        }
+    }
+    function genCallExpression(node, context) {
+        var push = context.push, helper = context.helper;
+        var callee = isString(node.callee) ? node.callee : helper(node.callee);
+        push(callee + "(");
+        genNodeList(node.arguments, context);
+        push(")");
+    }
+    function genConditionalExpression(node, context) {
+        var test = node.test, consquent = node.consquent, alternate = node.alternate, needNewLine = node.newline;
+        var push = context.push, indent = context.indent, deindent = context.deindent, newline = context.newline;
+        if (test.type === 4 /* NodeTypes.SIMPLE_EXPRESSION */) {
+            genExpression(test, context);
+        }
+        needNewLine && indent();
+        context.indentLevel++;
+        needNewLine || push(" ");
+        push('? ');
+        genNode(consquent, context);
+        context.indentLevel--;
+        needNewLine && newline();
+        needNewLine || push(" ");
+        push(": ");
+        var isNested = alternate.type === 19 /* NodeTypes.JS_CONDITIONAL_EXPRESSION */;
+        if (!isNested) {
+            context.indentLevel++;
+        }
+        console.log('alternate', alternate);
+        // debugger
+        genNode(alternate, context);
+        if (!isNested) {
+            context.indentLevel--;
+        }
+        needNewLine && deindent();
+    }
+    function genExpression(node, context) {
+        var content = node.content, isStatic = node.isStatic;
+        context.push(isStatic ? JSON.stringify(content) : content);
+    }
+    function genInterpolation(node, context) {
+        var push = context.push, helper = context.helper;
+        push("".concat(helper(TO_DISPLAY_STRING), "("));
+        genNode(node.content, context);
+        push(')');
+    }
+    function genCompoundExpression(node, context) {
+        for (var i = 0; i < node.children.length; i++) {
+            var child = node.children[i];
+            if (isString(child)) {
+                context.push(child);
+            }
+            else {
+                genNode(child, context);
+            }
+        }
+    }
+    function genVNodeCall(node, context) {
+        var push = context.push, helper = context.helper;
+        var tag = node.tag, props = node.props, children = node.children, patchFlag = node.patchFlag, dynamicProps = node.dynamicProps; node.directives; node.isBlock; node.disableTracking; node.isComponent;
+        var callHelper = getVNodeHelper(context.isSSR, node.isComponent);
+        push(helper(callHelper) + "(");
+        // 提取出有效参数
+        var args = genNullableArgs([tag, props, children, patchFlag, dynamicProps]);
+        /* 构建出
+            const _Vue = Vue
+
+            return function render (_ctx, _cache) {
+              const { createElementVNode: _createElementVNode } = _Vue
+              return _createElementVNode("div", [], ["hello world"])
+            }
+        */
+        genNodeList(args, context);
+        push(')');
+    }
+    function genText(node, context) {
+        context.push(JSON.stringify(node.content));
+    }
+    function genNodeList(nodes, context) {
+        var push = context.push; context.newline;
+        for (var i = 0; i < nodes.length; i++) {
+            var node = nodes[i];
+            if (isString(node)) {
+                push(node);
+            }
+            else if (isArray(node)) {
+                genNodeListAsArray(node, context);
+            }
+            else {
+                genNode(node, context);
+            }
+            if (i < nodes.length - 1) {
+                push(", ");
+            }
+        }
+    }
+    function genNodeListAsArray(nodes, context) {
+        var push = context.push;
+        push('[');
+        genNodeList(nodes, context);
+        push(']');
+    }
+    function genNullableArgs(args) {
+        var i = args.length;
+        while (i--) {
+            if (args[i] != null)
+                break;
+        }
+        return args.slice(0, i + 1).map(function (arg) { return arg || "null"; });
+    }
+
+    var transformIf = createStructuralDirectiveTransform(/^(if|else|else-if)/, function (node, dir, context) {
+        // 返回的这个函数时是onExit
+        return processIf(node, dir, context, function (ifNode, branch, isRoot) {
+            var key = 0;
+            // 通过这个函数来去构建codegen
+            return function () {
+                // 给ifNode加上codegenNode
+                if (isRoot) {
+                    ifNode.codegenNode = createCodegenNodeForBranch(branch, key, context);
+                }
+            };
+        });
+    });
+    // processIf是真正处理if指令的代码
+    function processIf(node, dir, context, processCodegen // 给节点增加codegen属性
+    ) {
+        if (dir.name === 'if') {
+            var branch = createIfBranch(node, dir);
+            var ifNode = {
+                type: 9 /* NodeTypes.IF */,
+                loc: {},
+                branches: [branch]
+            };
+            context.replaceNode(ifNode);
+            if (processCodegen) {
+                return processCodegen(ifNode, branch, true);
+            }
+        }
+    }
+    function createIfBranch(node, dir) {
+        return {
+            type: 10 /* NodeTypes.IF_BRANCH */,
+            loc: {},
+            condition: dir.exp,
+            children: [node]
+        };
+    }
+    function createCodegenNodeForBranch(branch, keyIndex, context) {
+        if (branch.condition) {
+            return createConditionalExpression(branch.condition, createChildrenCodegenNode(branch, keyIndex), createCallExpression(context.helper(CREATE_COMMENT), ['"v-if"', 'true']));
+        }
+        else {
+            return createChildrenCodegenNode(branch, keyIndex);
+        }
+        // return {}
+    }
+    // 创建指定子节点的codegen
+    function createChildrenCodegenNode(branch, keyIndex) {
+        var keyProperty = createObjectProperty("key", createSimpleExpression("".concat(keyIndex), false)); // 创建对象的属性节点
+        var children = branch.children;
+        var firstChild = children[0];
+        var ret = firstChild.codegenNode;
+        var vnodeCall = getMemoedVNodeCall(ret);
+        // 利用keyProperty去填充props
+        injectProp(vnodeCall, keyProperty);
+        return ret;
+    }
+    function injectProp(node, prop) {
+        var propsWithInjection;
+        var props = node.type === 13 /* NodeTypes.VNODE_CALL */ ? node.props : node.arguments[2];
+        if (props === null || isString(props)) {
+            propsWithInjection = createObjectExpression([prop]);
+        }
+        node.props = propsWithInjection;
+    }
+    function createObjectExpression(properties) {
+        return {
+            type: 15 /* NodeTypes.JS_OBJECT_EXPRESSION */,
+            loc: {},
+            properties: properties
+        };
+    }
+
     function baseCompile(template, options) {
         if (options === void 0) { options = {}; }
         // 将模板解析成AST
         var ast = baseParse(template);
+        console.log(6666, JSON.stringify(ast));
         // 将AST转化为JavascriptAST
-        transform(ast, extend(options, { nodeTransforms: [transformElement, transformText] }));
-        console.log(ast);
+        transform(ast, extend(options, { nodeTransforms: [transformElement, transformText, transformIf] }));
         console.log(JSON.stringify(ast));
-        return {};
+        // console.log(JSON.stringify(ast));
+        return generate(ast);
     }
 
     function compile(template, options) {
         return baseCompile(template, options);
     }
 
+    function compileToFunction(template, options) {
+        var code = compile(template, options).code;
+        console.log(code);
+        var render = new Function(code)();
+        return render;
+    }
+    registerRuntimeCompiler(compileToFunction);
+
     exports.Comment = Comment;
     exports.Fragment = Fragment;
     exports.Text = Text;
-    exports.compile = compile;
+    exports.compile = compileToFunction;
     exports.computed = computed;
+    exports.createApp = createApp;
+    exports.createCommentVNode = createCommentVNode;
+    exports.createElementVNode = createVNode;
     exports.effect = effect;
     exports.h = h;
     exports.reactive = reactive;
     exports.ref = ref;
     exports.render = render;
+    exports.toDisplayString = toDisplayString;
     exports.watch = watch;
 
     Object.defineProperty(exports, '__esModule', { value: true });

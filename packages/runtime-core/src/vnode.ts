@@ -51,6 +51,8 @@ export function createVNode(type: any, props?: any, children?: any) {
     return createBaseVNode(type,props,children,shapeFlag)
 }
 
+export { createVNode as createElementVNode }
+
 // 创建VNode，并对VNode进行处理
 export function createBaseVNode(type: any, props: any, children: any, shapeFlag: any) { 
     const VNode = {
@@ -60,11 +62,15 @@ export function createBaseVNode(type: any, props: any, children: any, shapeFlag:
         shapeFlag,
         key:props?.key || null
     } as VNode
-
+    // debugger
+    console.log('vnode', VNode);
+    
     normalizeChildren(VNode,children)
 
     return VNode
 }
+
+
  
 // 改变shapeFlags，记录VNode的类型
 function normalizeChildren(VNode:any, children:any) { 
@@ -102,6 +108,10 @@ export const normalizeVNode = (child) => {
 }
 
     
-    const cloneIfMounted = (child) => { 
-        return child
-     }
+const cloneIfMounted = (child) => { 
+    return child
+}
+
+export function createCommentVNode(text) {
+    return createVNode(Comment, null, text)
+}

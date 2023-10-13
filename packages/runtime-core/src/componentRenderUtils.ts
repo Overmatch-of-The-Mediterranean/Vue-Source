@@ -8,7 +8,7 @@ export function renderComponentRoot(instance) {
     let result
 
     if (vnode.shapeFlag & ShapeFlags.STATEFUL_COMPONENT) { 
-        result = normalizeVNode(render.call(data)!)
+        result = normalizeVNode(render.call(data,data)!)
         
      }
 

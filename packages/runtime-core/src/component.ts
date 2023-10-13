@@ -11,6 +11,8 @@ export const enum LifeCycleHooks  {
 
 let uid = 0
 
+let compile:any
+
 export function createComponentInstance(vnode) { 
     const type = vnode.type
     
@@ -72,11 +74,21 @@ function handleSetupResult(setupResult, instance) {
 export function finishComponentSetup(instance) {
     const Component = instance.type
     if (!instance.render) { 
+        if (compile && !Component.render) {
+            if (Component.template) {
+                const template = Component.template
+                Component.render = compile(template)
+            }
+        }
         instance.render = Component.render
      }
     
 
     applyOptions(instance)
+}
+
+export function registerRuntimeCompiler(_compile: any) {
+    compile = _compile
 }
 
 export function applyOptions(instance) { 

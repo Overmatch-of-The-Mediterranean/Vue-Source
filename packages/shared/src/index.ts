@@ -5,6 +5,9 @@ import { Target } from 'packages/reactivity/src/reactive'
 export const isArray = Array.isArray
 export const extend = Object.assign
 
+export { toDisplayString } from './toDisplayString'
+
+
 /**
  * 判断是否是对象
  */

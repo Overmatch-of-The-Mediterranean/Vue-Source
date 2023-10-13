@@ -1,5 +1,7 @@
+import { isArray, isString } from "@vue/shared"
 import { NodeTypes } from "./ast"
 import { isSingleElementRoot } from "./hoistStatic"
+import { TO_DISPLAY_STRING } from "./runtimeHelpers"
 
 
 export interface TransformContext { 
@@ -9,7 +11,8 @@ export interface TransformContext {
     currentNode
     helpers: Map<symbol, number>,
     helper<T extends symbol>(name: T): T
-    nodeTransforms:any[]
+    nodeTransforms: any[],
+    replaceNode(node):void
  }
 
  
@@ -25,7 +28,10 @@ export function createTransformContext(root, { nodeTransforms }) {
             const count = context.helpers.get(name) || 0
             context.helpers.set(name, count + 1)
             return name
-         }
+        },
+        replaceNode(node) {
+            context.parent!.children[context.childrenIndex] = context.currentNode = node
+        }
         
     }
 
@@ -68,16 +74,36 @@ export function tranverseNode(node,context:TransformContext) {
     for (let i = 0; i < nodeTransforms.length; i++) {
         const onExit = nodeTransforms[i](node, context);
         if (onExit) { 
-            exitFns.push(onExit)
-         }
+            if (isArray(onExit)) {
+                exitFns.push(...onExit)
+            } else {
+                exitFns.push(onExit)
+            }
+        }
         
+        if (!context.currentNode) {
+            return
+        } else {
+            node = context.currentNode
+        }
+
     }
 
     switch (node.type) {
+        case NodeTypes.IF_BRANCH:
         case NodeTypes.ELEMENT:
         case NodeTypes.ROOT:
             tranverseChildren(node,context)
             break;
+        case NodeTypes.INTERPOLATION:
+            context.helper(TO_DISPLAY_STRING)
+            break
+        case NodeTypes.IF:
+            for (let i = 0; i < node.branches.length; i++) {
+                tranverseNode(node.branches[i], context)
+            }
+            break
+            
     }
 
 
@@ -109,4 +135,35 @@ function createRootCodegen(root) {
 
 
     // Vue3支持多个根节点
+ }
+
+export function createStructuralDirectiveTransform(name: string | RegExp, fn) {
+    const matches = isString(name)
+        ? (n: string) => n === name
+        : (n: string) => (name as RegExp).test(n)
+    
+    return (node, context) => {
+        // 只去处理和element相关的指令
+        if (node.type === NodeTypes.ELEMENT) {
+            const props = node.props
+            const exitFns: any[] = []
+            
+            // 构建exitFns
+            for (let i = 0; i < props.length; i++) {
+                const prop = props[i]
+                // 对于prop而言，只去处理指令
+                if (prop.type === NodeTypes.DIRECTIVE && matches(prop.name)) {
+                    props.splice(i, 1)
+                    i--
+                    const onExit = fn(node, prop, context)
+                    if (onExit) {
+                        exitFns.push(onExit)
+                    }
+                }
+            }
+
+
+            return exitFns
+        }
+    }
  }

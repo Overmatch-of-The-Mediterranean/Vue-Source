@@ -6,6 +6,7 @@ import { createComponentInstance, setupComponent } from "./component"
 import { ReactiveEffect } from "packages/reactivity/src/effect"
 import { queuePreFlushCb } from "./scheduler"
 import { renderComponentRoot } from "./componentRenderUtils"
+import { createAppAPI } from "./apiCreateApp"
 
 interface RendererOptions { 
     insert(child:Element,parent:Element,anchor): void
@@ -44,6 +45,8 @@ function baseCreateRenderer(options: RendererOptions) {
                 // 组件挂载
                 const { bm, m } = instance
                 const subTree = instance.subTree = renderComponentRoot(instance)
+                console.log('subTree',subTree);
+                
 
                 if (bm) {
                     bm()
@@ -185,6 +188,8 @@ function baseCreateRenderer(options: RendererOptions) {
             }
             oldChildrenEnd--
             newChildrenEnd--
+
+            
         }
 
         // 3.newChildren比oldChildren多
@@ -208,7 +213,7 @@ function baseCreateRenderer(options: RendererOptions) {
             
         // 5.乱序
         else { 
-            debugger
+            // debugger
             const s1 = i // prev starting index
             const s2 = i // next starting index
 
@@ -308,22 +313,25 @@ function baseCreateRenderer(options: RendererOptions) {
         
         // 获取新旧vnode的children和shapeFlag
         const c1 = oldVNode && oldVNode.children
-        const  oldShapeFlag  = oldVNode && oldVNode.shapeFlag
-        const c2 = newVNode.children
+        const  oldShapeFlag  = oldVNode ? oldVNode.shapeFlag : 0
+        const c2 = newVNode && newVNode.children
         const { shapeFlag } = newVNode
 
+        
         if (shapeFlag & ShapeFlags.TEXT_CHILDREN) {
             if (oldShapeFlag & ShapeFlags.ARRAY_CHILDREN) {
                 // TODO 卸载操作
             }
             
             if (c2 !== c1) {
+                
                 hostSetElementText(container, c2)
             }
         } else { 
             if (oldShapeFlag & ShapeFlags.ARRAY_CHILDREN) {
                 if (shapeFlag & ShapeFlags.ARRAY_CHILDREN) {
                     // TODO diff
+                    
                     patchKeyedChildren(c1,c2,container,anchor)
                 } else {
                     // TODO 卸载操作    
@@ -385,6 +393,7 @@ function baseCreateRenderer(options: RendererOptions) {
             hostInsert((newVNode.el = hostCreateText(newVNode.children)),container,anchor)
         } else { 
             const el = (newVNode.el = oldVNode.el!)
+            
             // 更新操作
             if (oldVNode.children !== newVNode.children) { 
                 hostSetText(el, newVNode.children)
@@ -427,6 +436,7 @@ function baseCreateRenderer(options: RendererOptions) {
         // 不同元素的处理逻辑
         if (oldVNode && !isSameVNodeType(oldVNode, newVNode)) { 
             unmount(oldVNode)
+            
             oldVNode = null
          }
 
@@ -457,6 +467,7 @@ function baseCreateRenderer(options: RendererOptions) {
      }
     
     const render = (vnode, container) => { 
+        // debugger
         if (vnode == null) {
             // TODO卸载
             unmount(container._vnode)
@@ -468,7 +479,8 @@ function baseCreateRenderer(options: RendererOptions) {
      }
 
     return { 
-        render
+        render,
+        createApp: createAppAPI(render)
      }
 }
 
